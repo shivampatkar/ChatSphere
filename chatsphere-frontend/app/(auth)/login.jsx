@@ -167,8 +167,8 @@ function validatePassword(v) {
   return null;
 }
 
-// ─── FieldInput ───────────────────────────────────────────────────────────────
-function FieldInput({
+// ─── AnimatedField (matches register screen) ───────────────────────────────────
+function AnimatedField({
   label,
   placeholder,
   value,
@@ -181,27 +181,67 @@ function FieldInput({
   returnKeyType = "done",
   onSubmitEditing,
   hasError,
+  errorMessage,
   isValid,
   shakeAnim,
   icon: Icon,
 }) {
   const [focused, setFocused] = useState(false);
 
-  const borderColor = hasError
-    ? COLORS.error
-    : isValid && !focused
-      ? "#10B981"
-      : focused
-        ? COLORS.inputFocused
-        : COLORS.inputBorder;
+  // 0 = neutral, 1 = focused, 2 = valid, 3 = error
+  const colorAnim = useRef(new Animated.Value(0)).current;
+  const checkScale = useRef(new Animated.Value(0)).current;
+  const errorOpacity = useRef(new Animated.Value(0)).current;
 
-  const bgColor = hasError
-    ? "#FFF5F5"
-    : isValid && !focused
-      ? "#F0FDF8"
-      : focused
-        ? "#EFF6FF"
-        : COLORS.inputBg;
+  useEffect(() => {
+    let target = 0;
+    if (hasError) target = 3;
+    else if (isValid && !focused) target = 2;
+    else if (focused) target = 1;
+
+    Animated.timing(colorAnim, {
+      toValue: target,
+      duration: 220,
+      useNativeDriver: false,
+    }).start();
+  }, [focused, isValid, hasError]);
+
+  useEffect(() => {
+    Animated.spring(checkScale, {
+      toValue: isValid && !showToggle ? 1 : 0,
+      friction: 5,
+      tension: 140,
+      useNativeDriver: true,
+    }).start();
+  }, [isValid, showToggle]);
+
+  useEffect(() => {
+    Animated.timing(errorOpacity, {
+      toValue: hasError && errorMessage ? 1 : 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
+  }, [hasError, errorMessage]);
+
+  const borderColor = colorAnim.interpolate({
+    inputRange: [0, 1, 2, 3],
+    outputRange: [
+      COLORS.inputBorder,
+      COLORS.inputFocused,
+      "#10B981",
+      COLORS.error,
+    ],
+  });
+
+  const bgColor = colorAnim.interpolate({
+    inputRange: [0, 1, 2, 3],
+    outputRange: [COLORS.inputBg, "#EFF6FF", COLORS.inputBg, "#FFF5F5"],
+  });
+
+  const borderWidth = colorAnim.interpolate({
+    inputRange: [0, 1, 2, 3],
+    outputRange: [1.5, 1.8, 1.5, 1.5],
+  });
 
   const iconColor = hasError
     ? COLORS.error
@@ -218,9 +258,9 @@ function FieldInput({
           {
             borderColor,
             backgroundColor: bgColor,
-            borderWidth: focused ? 1.8 : 1.5,
+            borderWidth,
+            transform: [{ translateX: shakeAnim }],
           },
-          { transform: [{ translateX: shakeAnim }] },
         ]}
       >
         <Icon size={rs(17)} color={iconColor} style={fi.icon} />
@@ -251,11 +291,19 @@ function FieldInput({
             )}
           </Pressable>
         )}
-        {isValid && !showToggle && (
-          <View style={fi.validDot}>
+        {!showToggle && (
+          <Animated.View
+            style={[fi.validDot, { transform: [{ scale: checkScale }] }]}
+          >
             <Check size={rs(10)} color="#fff" strokeWidth={2.5} />
-          </View>
+          </Animated.View>
         )}
+      </Animated.View>
+
+      <Animated.View style={{ opacity: errorOpacity }}>
+        {hasError && errorMessage ? (
+          <Text style={fi.errorText}>{errorMessage}</Text>
+        ) : null}
       </Animated.View>
     </View>
   );
@@ -295,6 +343,13 @@ const fi = StyleSheet.create({
     alignItems: "center",
     marginLeft: rs(8),
   },
+  errorText: {
+    fontSize: rs(11),
+    color: COLORS.error,
+    marginTop: vs(5),
+    paddingHorizontal: rs(2),
+    fontWeight: WEIGHT.medium,
+  },
 });
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
@@ -313,6 +368,13 @@ export default function LoginScreen() {
   const logoOpacity = useRef(new Animated.Value(0)).current;
   const cardOpacity = useRef(new Animated.Value(0)).current;
   const cardSlide = useRef(new Animated.Value(30)).current;
+
+  // Logo pulse + tagline fade
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const taglineOpacity = useRef(new Animated.Value(0)).current;
+
+  // Staggered field entrance
+  const fieldAnims = useRef([0, 1].map(() => new Animated.Value(0))).current;
 
   const setAuth = useAuthStore((s) => s.setAuth);
 
@@ -344,6 +406,43 @@ export default function LoginScreen() {
           useNativeDriver: true,
         }),
       ]).start();
+
+      // Staggered field entrance
+      Animated.stagger(
+        70,
+        fieldAnims.map((anim) =>
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 320,
+            delay: 120,
+            useNativeDriver: true,
+          }),
+        ),
+      ).start();
+
+      // Tagline fade-in after app name
+      Animated.timing(taglineOpacity, {
+        toValue: 1,
+        duration: 400,
+        delay: 250,
+        useNativeDriver: true,
+      }).start();
+
+      // Logo breathing pulse loop
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.08,
+            duration: 1400,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 1400,
+            useNativeDriver: true,
+          }),
+        ]),
+      ).start();
     }, 850);
     return () => clearTimeout(t);
   }, []);
@@ -409,6 +508,18 @@ export default function LoginScreen() {
     }
   };
 
+  const fieldEntrance = (anim) => ({
+    opacity: anim,
+    transform: [
+      {
+        translateY: anim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [14, 0],
+        }),
+      },
+    ],
+  });
+
   if (!ready) {
     return (
       <LinearGradient
@@ -442,8 +553,20 @@ export default function LoginScreen() {
               { opacity: logoOpacity, transform: [{ scale: logoScale }] },
             ]}
           >
-            <View style={s.ringOuter}>
-              <View style={s.ringMid}>
+            <Animated.View
+              style={[s.ringOuter, { transform: [{ scale: pulseAnim }] }]}
+            >
+              <Animated.View
+                style={[
+                  s.ringMid,
+                  {
+                    opacity: pulseAnim.interpolate({
+                      inputRange: [1, 1.08],
+                      outputRange: [0.6, 1],
+                    }),
+                  },
+                ]}
+              >
                 <View style={s.logoBox}>
                   <Image
                     source={require("../../assets/images/logo.png")}
@@ -451,12 +574,14 @@ export default function LoginScreen() {
                     resizeMode="contain"
                   />
                 </View>
-              </View>
-            </View>
+              </Animated.View>
+            </Animated.View>
             <Text style={s.appName} numberOfLines={1} adjustsFontSizeToFit>
               ChatSphere
             </Text>
-            <Text style={s.tagline}>Connect. Chat. Belong.</Text>
+            <Animated.Text style={[s.tagline, { opacity: taglineOpacity }]}>
+              Connect. Chat. Belong.
+            </Animated.Text>
           </Animated.View>
 
           {/* Card */}
@@ -469,44 +594,50 @@ export default function LoginScreen() {
             <Text style={s.cardTitle}>Welcome back</Text>
             <Text style={s.cardSub}>Sign in to your account</Text>
 
-            <FieldInput
-              label="Username"
-              placeholder="Enter your username"
-              value={username}
-              onChangeText={(v) => {
-                setUsername(v);
-                if (!touched.username)
-                  setTouched((t) => ({ ...t, username: true }));
-              }}
-              icon={User}
-              returnKeyType="next"
-              onSubmitEditing={() => passwordRef.current?.focus()}
-              hasError={!!uErr}
-              isValid={uValid}
-              shakeAnim={usernameShake}
-            />
+            <Animated.View style={fieldEntrance(fieldAnims[0])}>
+              <AnimatedField
+                label="Username"
+                placeholder="Enter your username"
+                value={username}
+                onChangeText={(v) => {
+                  setUsername(v);
+                  if (!touched.username)
+                    setTouched((t) => ({ ...t, username: true }));
+                }}
+                icon={User}
+                returnKeyType="next"
+                onSubmitEditing={() => passwordRef.current?.focus()}
+                hasError={!!uErr}
+                errorMessage={uErr}
+                isValid={uValid}
+                shakeAnim={usernameShake}
+              />
+            </Animated.View>
 
-            <FieldInput
-              label="Password"
-              placeholder="Enter your password"
-              value={password}
-              onChangeText={(v) => {
-                setPassword(v);
-                if (!touched.password)
-                  setTouched((t) => ({ ...t, password: true }));
-              }}
-              icon={Lock}
-              secureTextEntry
-              showToggle
-              showPassword={showPassword}
-              onTogglePassword={() => setShowPassword((p) => !p)}
-              inputRef={passwordRef}
-              returnKeyType="done"
-              onSubmitEditing={handleLogin}
-              hasError={!!pErr}
-              isValid={pValid}
-              shakeAnim={passwordShake}
-            />
+            <Animated.View style={fieldEntrance(fieldAnims[1])}>
+              <AnimatedField
+                label="Password"
+                placeholder="Enter your password"
+                value={password}
+                onChangeText={(v) => {
+                  setPassword(v);
+                  if (!touched.password)
+                    setTouched((t) => ({ ...t, password: true }));
+                }}
+                icon={Lock}
+                secureTextEntry
+                showToggle
+                showPassword={showPassword}
+                onTogglePassword={() => setShowPassword((p) => !p)}
+                inputRef={passwordRef}
+                returnKeyType="done"
+                onSubmitEditing={handleLogin}
+                hasError={!!pErr}
+                errorMessage={pErr}
+                isValid={pValid}
+                shakeAnim={passwordShake}
+              />
+            </Animated.View>
 
             <Pressable
               onPress={handleLogin}

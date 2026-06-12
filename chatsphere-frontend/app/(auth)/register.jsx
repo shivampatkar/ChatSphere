@@ -59,17 +59,9 @@ function validatePassword(v) {
   if (v.length < 6) return "min 6 characters";
   return null;
 }
-function passwordStrength(v) {
-  if (!v || v.length < 3) return 0;
-  let s = 0;
-  if (v.length >= 6) s++;
-  if (v.length >= 10) s++;
-  if (/[^a-zA-Z0-9]/.test(v)) s++;
-  return s;
-}
 
-// ─── FieldInput ───────────────────────────────────────────────────────────────
-function FieldInput({
+// ─── AnimatedField (shared border/bg/checkmark transition) ─────────────────────
+function AnimatedField({
   label,
   placeholder,
   value,
@@ -83,33 +75,78 @@ function FieldInput({
   onSubmitEditing,
   keyboardType = "default",
   hasError,
+  errorMessage,
   isValid,
   shakeAnim,
   icon: Icon,
 }) {
   const [focused, setFocused] = useState(false);
 
-  const borderColor = hasError
-    ? COLORS.error
-    : isValid && !focused
-      ? "#10B981"
-      : focused
-        ? COLORS.inputFocused
-        : COLORS.inputBorder;
+  // Animated color transition driver: 0 = neutral, 1 = focused, 2 = valid, 3 = error
+  const colorAnim = useRef(new Animated.Value(0)).current;
+  const checkScale = useRef(new Animated.Value(0)).current;
+  const errorOpacity = useRef(new Animated.Value(0)).current;
 
-  const bgColor = hasError
-    ? "#FFF5F5"
-    : isValid && !focused
-      ? "#F0FDF8"
-      : focused
-        ? "#EFF6FF"
-        : COLORS.inputBg;
+  useEffect(() => {
+    let target = 0;
+    if (hasError) target = 3;
+    else if (isValid && !focused) target = 2;
+    else if (focused) target = 1;
+
+    Animated.timing(colorAnim, {
+      toValue: target,
+      duration: 220,
+      useNativeDriver: false, // color interpolation requires JS driver
+    }).start();
+  }, [focused, isValid, hasError]);
+
+  useEffect(() => {
+    Animated.spring(checkScale, {
+      toValue: isValid && !showToggle ? 1 : 0,
+      friction: 5,
+      tension: 140,
+      useNativeDriver: true,
+    }).start();
+  }, [isValid, showToggle]);
+
+  useEffect(() => {
+    Animated.timing(errorOpacity, {
+      toValue: hasError && errorMessage ? 1 : 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
+  }, [hasError, errorMessage]);
+
+  const borderColor = colorAnim.interpolate({
+    inputRange: [0, 1, 2, 3],
+    outputRange: [
+      COLORS.inputBorder,
+      COLORS.inputFocused,
+      "#10B981",
+      COLORS.error,
+    ],
+  });
+
+  const bgColor = colorAnim.interpolate({
+    inputRange: [0, 1, 2, 3],
+    outputRange: [
+      COLORS.inputBg,
+      "#EFF6FF",
+      COLORS.inputBg, // keep bg neutral on valid — checkmark communicates state
+      "#FFF5F5",
+    ],
+  });
 
   const iconColor = hasError
     ? COLORS.error
     : focused
       ? COLORS.inputFocused
       : COLORS.textMuted;
+
+  const borderWidth = colorAnim.interpolate({
+    inputRange: [0, 1, 2, 3],
+    outputRange: [1.5, 1.8, 1.5, 1.5],
+  });
 
   return (
     <View style={{ marginBottom: vs(16) }}>
@@ -120,9 +157,9 @@ function FieldInput({
           {
             borderColor,
             backgroundColor: bgColor,
-            borderWidth: focused ? 1.8 : 1.5,
+            borderWidth,
+            transform: [{ translateX: shakeAnim }],
           },
-          { transform: [{ translateX: shakeAnim }] },
         ]}
       >
         <Icon size={rs(17)} color={iconColor} style={fi.icon} />
@@ -154,11 +191,25 @@ function FieldInput({
             )}
           </Pressable>
         )}
-        {isValid && !showToggle && (
-          <View style={fi.validDot}>
+        {!showToggle && (
+          <Animated.View
+            style={[
+              fi.validDot,
+              {
+                transform: [{ scale: checkScale }],
+              },
+            ]}
+          >
             <Check size={rs(10)} color="#fff" strokeWidth={2.5} />
-          </View>
+          </Animated.View>
         )}
+      </Animated.View>
+
+      {/* Inline error message */}
+      <Animated.View style={{ opacity: errorOpacity }}>
+        {hasError && errorMessage ? (
+          <Text style={fi.errorText}>{errorMessage}</Text>
+        ) : null}
       </Animated.View>
     </View>
   );
@@ -198,45 +249,12 @@ const fi = StyleSheet.create({
     alignItems: "center",
     marginLeft: rs(8),
   },
-});
-
-// ─── Strength Bar ─────────────────────────────────────────────────────────────
-function StrengthBar({ strength }) {
-  const colors = [COLORS.error, COLORS.warning, "#10B981"];
-  const labels = ["Weak", "Fair", "Strong"];
-  if (!strength) return null;
-  return (
-    <View style={sb.wrap}>
-      <View style={sb.row}>
-        {[0, 1, 2].map((i) => (
-          <View
-            key={i}
-            style={[
-              sb.seg,
-              {
-                backgroundColor:
-                  i < strength ? colors[strength - 1] : COLORS.border,
-              },
-            ]}
-          />
-        ))}
-      </View>
-      <Text style={[sb.lbl, { color: colors[strength - 1] }]}>
-        {labels[strength - 1]}
-      </Text>
-    </View>
-  );
-}
-
-const sb = StyleSheet.create({
-  wrap: { marginTop: vs(6), paddingHorizontal: rs(2) },
-  row: { flexDirection: "row", gap: rs(4) },
-  seg: { flex: 1, height: rs(3), borderRadius: 99 },
-  lbl: {
-    fontSize: rs(10),
-    fontWeight: WEIGHT.semibold,
-    marginTop: vs(3),
-    letterSpacing: 0.3,
+  errorText: {
+    fontSize: rs(11),
+    color: COLORS.error,
+    marginTop: vs(5),
+    paddingHorizontal: rs(2),
+    fontWeight: WEIGHT.medium,
   },
 });
 
@@ -262,6 +280,13 @@ export default function RegisterScreen() {
   const cardOpacity = useRef(new Animated.Value(0)).current;
   const cardSlide = useRef(new Animated.Value(24)).current;
 
+  // Per-field stagger animations
+  const fieldAnims = useRef([0, 1, 2].map(() => new Animated.Value(0))).current;
+
+  // Logo pulse
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const taglineOpacity = useRef(new Animated.Value(0)).current;
+
   const setAuth = useAuthStore((s) => s.setAuth);
 
   useEffect(() => {
@@ -277,6 +302,42 @@ export default function RegisterScreen() {
         useNativeDriver: true,
       }),
     ]).start();
+
+    // Staggered field entrance
+    Animated.stagger(
+      70,
+      fieldAnims.map((anim) =>
+        Animated.timing(anim, {
+          toValue: 1,
+          duration: 320,
+          useNativeDriver: true,
+        }),
+      ),
+    ).start();
+
+    // Tagline fades in after app name
+    Animated.timing(taglineOpacity, {
+      toValue: 1,
+      duration: 400,
+      delay: 250,
+      useNativeDriver: true,
+    }).start();
+
+    // Logo breathing pulse loop
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.08,
+          duration: 1400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1400,
+          useNativeDriver: true,
+        }),
+      ]),
+    ).start();
   }, []);
 
   const shake = (anim) => {
@@ -315,7 +376,6 @@ export default function RegisterScreen() {
   const uValid = !validateUsername(username) && username.length > 0;
   const eValid = !validateEmail(email) && email.length > 0;
   const pValid = !validatePassword(password) && password.length > 0;
-  const pStr = passwordStrength(password);
   const canSubmit = uValid && eValid && pValid && !isLoading;
 
   const handleRegister = async () => {
@@ -347,6 +407,19 @@ export default function RegisterScreen() {
     }
   };
 
+  // Helper: builds entrance animation style for staggered fields
+  const fieldEntrance = (anim) => ({
+    opacity: anim,
+    transform: [
+      {
+        translateY: anim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [14, 0],
+        }),
+      },
+    ],
+  });
+
   return (
     <LinearGradient
       colors={[COLORS.gradientStart, COLORS.gradientMid, COLORS.gradientEnd]}
@@ -373,8 +446,20 @@ export default function RegisterScreen() {
 
           {/* Logo */}
           <View style={s.top}>
-            <View style={s.ringOuter}>
-              <View style={s.ringMid}>
+            <Animated.View
+              style={[s.ringOuter, { transform: [{ scale: pulseAnim }] }]}
+            >
+              <Animated.View
+                style={[
+                  s.ringMid,
+                  {
+                    opacity: pulseAnim.interpolate({
+                      inputRange: [1, 1.08],
+                      outputRange: [0.6, 1],
+                    }),
+                  },
+                ]}
+              >
                 <View style={s.logoBox}>
                   <Image
                     source={require("../../assets/images/logo.png")}
@@ -382,12 +467,14 @@ export default function RegisterScreen() {
                     resizeMode="contain"
                   />
                 </View>
-              </View>
-            </View>
+              </Animated.View>
+            </Animated.View>
             <Text style={s.appName} numberOfLines={1} adjustsFontSizeToFit>
               ChatSphere
             </Text>
-            <Text style={s.tagline}>Join the conversation</Text>
+            <Animated.Text style={[s.tagline, { opacity: taglineOpacity }]}>
+              Join the conversation
+            </Animated.Text>
           </View>
 
           {/* Card */}
@@ -400,100 +487,72 @@ export default function RegisterScreen() {
             <Text style={s.cardTitle}>Create account</Text>
             <Text style={s.cardSub}>Free forever, takes one minute</Text>
 
-            <FieldInput
-              label="Username"
-              placeholder="Choose a username"
-              value={username}
-              onChangeText={(v) => {
-                setUsername(v);
-                if (!touched.username)
-                  setTouched((t) => ({ ...t, username: true }));
-              }}
-              icon={User}
-              returnKeyType="next"
-              onSubmitEditing={() => emailRef.current?.focus()}
-              hasError={!!uErr}
-              isValid={uValid}
-              shakeAnim={usernameShake}
-            />
+            <Animated.View style={fieldEntrance(fieldAnims[0])}>
+              <AnimatedField
+                label="Username"
+                placeholder="Choose a username"
+                value={username}
+                onChangeText={(v) => {
+                  setUsername(v);
+                  if (!touched.username)
+                    setTouched((t) => ({ ...t, username: true }));
+                }}
+                icon={User}
+                returnKeyType="next"
+                onSubmitEditing={() => emailRef.current?.focus()}
+                hasError={!!uErr}
+                errorMessage={uErr}
+                isValid={uValid}
+                shakeAnim={usernameShake}
+              />
+            </Animated.View>
 
-            <FieldInput
-              label="Email"
-              placeholder="Enter your email"
-              value={email}
-              onChangeText={(v) => {
-                setEmail(v);
-                if (!touched.email) setTouched((t) => ({ ...t, email: true }));
-              }}
-              icon={Mail}
-              keyboardType="email-address"
-              returnKeyType="next"
-              onSubmitEditing={() => passwordRef.current?.focus()}
-              inputRef={emailRef}
-              hasError={!!eErr}
-              isValid={eValid}
-              shakeAnim={emailShake}
-            />
+            <Animated.View style={fieldEntrance(fieldAnims[1])}>
+              <AnimatedField
+                label="Email"
+                placeholder="Enter your email"
+                value={email}
+                onChangeText={(v) => {
+                  setEmail(v);
+                  if (!touched.email)
+                    setTouched((t) => ({ ...t, email: true }));
+                }}
+                icon={Mail}
+                keyboardType="email-address"
+                returnKeyType="next"
+                onSubmitEditing={() => passwordRef.current?.focus()}
+                inputRef={emailRef}
+                hasError={!!eErr}
+                errorMessage={eErr}
+                isValid={eValid}
+                shakeAnim={emailShake}
+              />
+            </Animated.View>
 
-            {/* Password with strength bar */}
-            <View style={{ marginBottom: vs(16) }}>
-              <Text style={fi.label}>Password</Text>
-              <Animated.View
-                style={[
-                  fi.row,
-                  {
-                    borderColor: pErr
-                      ? COLORS.error
-                      : pValid
-                        ? "#10B981"
-                        : passwordShake
-                          ? COLORS.inputFocused
-                          : COLORS.inputBorder,
-                    backgroundColor: pErr
-                      ? "#FFF5F5"
-                      : pValid
-                        ? "#F0FDF8"
-                        : COLORS.inputBg,
-                    borderWidth: 1.5,
-                  },
-                  { transform: [{ translateX: passwordShake }] },
-                ]}
-              >
-                <Lock
-                  size={rs(17)}
-                  color={pErr ? COLORS.error : COLORS.textMuted}
-                  style={fi.icon}
-                />
-                <TextInput
-                  ref={passwordRef}
-                  style={fi.input}
-                  value={password}
-                  onChangeText={(v) => {
-                    setPassword(v);
-                    if (!touched.password)
-                      setTouched((t) => ({ ...t, password: true }));
-                  }}
-                  placeholder="Min 6 characters"
-                  placeholderTextColor={COLORS.textMuted}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  returnKeyType="done"
-                  onSubmitEditing={handleRegister}
-                />
-                <Pressable
-                  onPress={() => setShowPassword((p) => !p)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  style={fi.eyeBtn}
-                >
-                  {showPassword ? (
-                    <EyeOff size={rs(17)} color={COLORS.textMuted} />
-                  ) : (
-                    <Eye size={rs(17)} color={COLORS.textMuted} />
-                  )}
-                </Pressable>
-              </Animated.View>
-              {password.length > 0 && <StrengthBar strength={pStr} />}
-            </View>
+            <Animated.View style={fieldEntrance(fieldAnims[2])}>
+              <AnimatedField
+                label="Password"
+                placeholder="Min 6 characters"
+                value={password}
+                onChangeText={(v) => {
+                  setPassword(v);
+                  if (!touched.password)
+                    setTouched((t) => ({ ...t, password: true }));
+                }}
+                icon={Lock}
+                secureTextEntry
+                showToggle
+                showPassword={showPassword}
+                onTogglePassword={() => setShowPassword((p) => !p)}
+                inputRef={passwordRef}
+                returnKeyType="done"
+                onSubmitEditing={handleRegister}
+                hasError={!!pErr}
+                errorMessage={pErr}
+                isValid={pValid}
+                shakeAnim={passwordShake}
+              />
+            </Animated.View>
 
             <Pressable
               onPress={handleRegister}
