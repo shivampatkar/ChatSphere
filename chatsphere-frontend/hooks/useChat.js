@@ -60,8 +60,6 @@ export default function useChat() {
     };
   }, []);
 
-  console.log("Chat Hook - Messages:", messages);
-
   const sendMessage = useCallback((text) => {
     socketService.emit("send_message", { text });
   }, []);
