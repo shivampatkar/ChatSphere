@@ -43,29 +43,38 @@ const vs = (n) => Math.min(Math.max((height / 844) * n, n * 0.82), n * 1.14);
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 function validateUsername(v) {
-  if (!v.trim()) return "required";
-  if (v.trim().length < 3) return "min 3 characters";
-  if (!/^[a-zA-Z0-9_]+$/.test(v.trim())) return "letters, numbers & _ only";
-  return null;
-}
-function validateEmail(v) {
-  if (!v.trim()) return "required";
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim()))
-    return "enter a valid email";
-  return null;
-}
-function validatePassword(v) {
-  if (!v) return "required";
-  if (v.length < 6) return "min 6 characters";
+  if (!v.trim()) return "Username is required";
+  if (v.trim().length < 3) return "Must be at least 3 characters";
+  if (!/^[a-zA-Z0-9_]+$/.test(v.trim())) return "Letters, numbers & _ only";
   return null;
 }
 
-// ─── AnimatedField (shared border/bg/checkmark transition) ─────────────────────
+function validateEmail(v) {
+  if (!v.trim()) return "Email is required";
+  // Proper email regex: local@domain.tld — supports subdomains, all valid TLDs
+  const emailRegex = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/;
+  if (!emailRegex.test(v.trim())) return "Enter a valid email address";
+  return null;
+}
+
+function validatePassword(v) {
+  if (!v) return "Password is required";
+  if (v.length < 6) return "Must be at least 6 characters";
+  return null;
+}
+
+// ─── AnimatedField ─────────────────────────────────────────────────────────────
+// UX rules:
+//   • Green checkmark appears while typing as soon as value is valid (positive feedback)
+//   • Error only shows after the user leaves the field (onBlur) — never while typing
+//   • Once an error is shown, it stays visible on re-focus so user knows what to fix
+//   • Password uses keyboardType="visible-password" on Android → normal keyboard, masked chars
 function AnimatedField({
   label,
   placeholder,
   value,
   onChangeText,
+  onBlur,
   secureTextEntry = false,
   showToggle = false,
   showPassword,
@@ -82,21 +91,20 @@ function AnimatedField({
 }) {
   const [focused, setFocused] = useState(false);
 
-  // Animated color transition driver: 0 = neutral, 1 = focused, 2 = valid, 3 = error
   const colorAnim = useRef(new Animated.Value(0)).current;
   const checkScale = useRef(new Animated.Value(0)).current;
   const errorOpacity = useRef(new Animated.Value(0)).current;
+  const errorHeight = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     let target = 0;
     if (hasError) target = 3;
     else if (isValid && !focused) target = 2;
     else if (focused) target = 1;
-
     Animated.timing(colorAnim, {
       toValue: target,
       duration: 220,
-      useNativeDriver: false, // color interpolation requires JS driver
+      useNativeDriver: false,
     }).start();
   }, [focused, isValid, hasError]);
 
@@ -110,11 +118,19 @@ function AnimatedField({
   }, [isValid, showToggle]);
 
   useEffect(() => {
-    Animated.timing(errorOpacity, {
-      toValue: hasError && errorMessage ? 1 : 0,
-      duration: 180,
-      useNativeDriver: true,
-    }).start();
+    const show = hasError && !!errorMessage;
+    Animated.parallel([
+      Animated.timing(errorOpacity, {
+        toValue: show ? 1 : 0,
+        duration: 200,
+        useNativeDriver: false,
+      }),
+      Animated.timing(errorHeight, {
+        toValue: show ? vs(22) : 0,
+        duration: 200,
+        useNativeDriver: false,
+      }),
+    ]).start();
   }, [hasError, errorMessage]);
 
   const borderColor = colorAnim.interpolate({
@@ -129,12 +145,12 @@ function AnimatedField({
 
   const bgColor = colorAnim.interpolate({
     inputRange: [0, 1, 2, 3],
-    outputRange: [
-      COLORS.inputBg,
-      "#EFF6FF",
-      COLORS.inputBg, // keep bg neutral on valid — checkmark communicates state
-      "#FFF5F5",
-    ],
+    outputRange: [COLORS.inputBg, "#EFF6FF", COLORS.inputBg, "#FFF5F5"],
+  });
+
+  const borderWidth = colorAnim.interpolate({
+    inputRange: [0, 1, 2, 3],
+    outputRange: [1.5, 1.8, 1.5, 1.5],
   });
 
   const iconColor = hasError
@@ -143,10 +159,10 @@ function AnimatedField({
       ? COLORS.inputFocused
       : COLORS.textMuted;
 
-  const borderWidth = colorAnim.interpolate({
-    inputRange: [0, 1, 2, 3],
-    outputRange: [1.5, 1.8, 1.5, 1.5],
-  });
+  const handleBlur = () => {
+    setFocused(false);
+    onBlur?.();
+  };
 
   return (
     <View style={{ marginBottom: vs(16) }}>
@@ -166,17 +182,47 @@ function AnimatedField({
         <TextInput
           ref={inputRef}
           style={fi.input}
-          value={value}
-          onChangeText={onChangeText}
+          value={
+            secureTextEntry && !showPassword ? "•".repeat(value.length) : value
+          }
+          onChangeText={(text) => {
+            if (secureTextEntry && !showPassword) {
+              const prev = value;
+              const diff = text.length - prev.length;
+              if (diff > 0) {
+                onChangeText(prev + text.slice(prev.length));
+              } else {
+                onChangeText(prev.slice(0, text.length));
+              }
+            } else {
+              onChangeText(text);
+            }
+          }}
           placeholder={placeholder}
           placeholderTextColor={COLORS.textMuted}
-          secureTextEntry={secureTextEntry && !showPassword}
-          autoCapitalize="none"
+          secureTextEntry={false}
           keyboardType={keyboardType}
+          autoCapitalize="none"
+          autoCorrect={false}
+          spellCheck={false}
+          autoComplete={
+            secureTextEntry
+              ? "new-password"
+              : keyboardType === "email-address"
+                ? "email"
+                : "username"
+          }
+          textContentType={
+            secureTextEntry
+              ? "newPassword"
+              : keyboardType === "email-address"
+                ? "emailAddress"
+                : "username"
+          }
           returnKeyType={returnKeyType}
           onSubmitEditing={onSubmitEditing}
           onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onBlur={handleBlur}
         />
         {showToggle && (
           <Pressable
@@ -193,23 +239,22 @@ function AnimatedField({
         )}
         {!showToggle && (
           <Animated.View
-            style={[
-              fi.validDot,
-              {
-                transform: [{ scale: checkScale }],
-              },
-            ]}
+            style={[fi.validDot, { transform: [{ scale: checkScale }] }]}
           >
             <Check size={rs(10)} color="#fff" strokeWidth={2.5} />
           </Animated.View>
         )}
       </Animated.View>
 
-      {/* Inline error message */}
-      <Animated.View style={{ opacity: errorOpacity }}>
-        {hasError && errorMessage ? (
-          <Text style={fi.errorText}>{errorMessage}</Text>
-        ) : null}
+      {/* Error — animates in height + opacity, only after blur */}
+      <Animated.View
+        style={{
+          opacity: errorOpacity,
+          height: errorHeight,
+          overflow: "hidden",
+        }}
+      >
+        <Text style={fi.errorText}>⚠ {errorMessage}</Text>
       </Animated.View>
     </View>
   );
@@ -252,7 +297,7 @@ const fi = StyleSheet.create({
   errorText: {
     fontSize: rs(11),
     color: COLORS.error,
-    marginTop: vs(5),
+    marginTop: vs(4),
     paddingHorizontal: rs(2),
     fontWeight: WEIGHT.medium,
   },
@@ -265,7 +310,10 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [touched, setTouched] = useState({
+
+  // "blurred" tracks whether user has left each field at least once
+  // Errors only appear after blurring — never while actively typing
+  const [blurred, setBlurred] = useState({
     username: false,
     email: false,
     password: false,
@@ -279,11 +327,7 @@ export default function RegisterScreen() {
   const passwordShake = useRef(new Animated.Value(0)).current;
   const cardOpacity = useRef(new Animated.Value(0)).current;
   const cardSlide = useRef(new Animated.Value(24)).current;
-
-  // Per-field stagger animations
   const fieldAnims = useRef([0, 1, 2].map(() => new Animated.Value(0))).current;
-
-  // Logo pulse
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const taglineOpacity = useRef(new Animated.Value(0)).current;
 
@@ -303,7 +347,6 @@ export default function RegisterScreen() {
       }),
     ]).start();
 
-    // Staggered field entrance
     Animated.stagger(
       70,
       fieldAnims.map((anim) =>
@@ -315,7 +358,6 @@ export default function RegisterScreen() {
       ),
     ).start();
 
-    // Tagline fades in after app name
     Animated.timing(taglineOpacity, {
       toValue: 1,
       duration: 400,
@@ -323,7 +365,6 @@ export default function RegisterScreen() {
       useNativeDriver: true,
     }).start();
 
-    // Logo breathing pulse loop
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
@@ -370,23 +411,30 @@ export default function RegisterScreen() {
     ]).start();
   };
 
-  const uErr = touched.username ? validateUsername(username) : null;
-  const eErr = touched.email ? validateEmail(email) : null;
-  const pErr = touched.password ? validatePassword(password) : null;
-  const uValid = !validateUsername(username) && username.length > 0;
-  const eValid = !validateEmail(email) && email.length > 0;
-  const pValid = !validatePassword(password) && password.length > 0;
+  // Always compute validation results
+  const uValidationErr = validateUsername(username);
+  const eValidationErr = validateEmail(email);
+  const pValidationErr = validatePassword(password);
+
+  // isValid drives the green checkmark — shows while typing, no blur needed
+  const uValid = !uValidationErr && username.length > 0;
+  const eValid = !eValidationErr && email.length > 0;
+  const pValid = !pValidationErr && password.length > 0;
+
+  // hasError only shows red after the field has been blurred at least once
+  const uErr = blurred.username ? uValidationErr : null;
+  const eErr = blurred.email ? eValidationErr : null;
+  const pErr = blurred.password ? pValidationErr : null;
+
   const canSubmit = uValid && eValid && pValid && !isLoading;
 
   const handleRegister = async () => {
-    setTouched({ username: true, email: true, password: true });
-    const ue = validateUsername(username);
-    const ee = validateEmail(email);
-    const pe = validatePassword(password);
-    if (ue) shake(usernameShake);
-    if (ee) shake(emailShake);
-    if (pe) shake(passwordShake);
-    if (ue || ee || pe) return;
+    // On submit, force-reveal all errors regardless of blur state
+    setBlurred({ username: true, email: true, password: true });
+    if (uValidationErr) shake(usernameShake);
+    if (eValidationErr) shake(emailShake);
+    if (pValidationErr) shake(passwordShake);
+    if (uValidationErr || eValidationErr || pValidationErr) return;
 
     setIsLoading(true);
     try {
@@ -407,7 +455,6 @@ export default function RegisterScreen() {
     }
   };
 
-  // Helper: builds entrance animation style for staggered fields
   const fieldEntrance = (anim) => ({
     opacity: anim,
     transform: [
@@ -492,11 +539,8 @@ export default function RegisterScreen() {
                 label="Username"
                 placeholder="Choose a username"
                 value={username}
-                onChangeText={(v) => {
-                  setUsername(v);
-                  if (!touched.username)
-                    setTouched((t) => ({ ...t, username: true }));
-                }}
+                onChangeText={setUsername}
+                onBlur={() => setBlurred((b) => ({ ...b, username: true }))}
                 icon={User}
                 returnKeyType="next"
                 onSubmitEditing={() => emailRef.current?.focus()}
@@ -510,13 +554,10 @@ export default function RegisterScreen() {
             <Animated.View style={fieldEntrance(fieldAnims[1])}>
               <AnimatedField
                 label="Email"
-                placeholder="Enter your email"
+                placeholder="you@example.com"
                 value={email}
-                onChangeText={(v) => {
-                  setEmail(v);
-                  if (!touched.email)
-                    setTouched((t) => ({ ...t, email: true }));
-                }}
+                onChangeText={setEmail}
+                onBlur={() => setBlurred((b) => ({ ...b, email: true }))}
                 icon={Mail}
                 keyboardType="email-address"
                 returnKeyType="next"
@@ -534,11 +575,8 @@ export default function RegisterScreen() {
                 label="Password"
                 placeholder="Min 6 characters"
                 value={password}
-                onChangeText={(v) => {
-                  setPassword(v);
-                  if (!touched.password)
-                    setTouched((t) => ({ ...t, password: true }));
-                }}
+                onChangeText={setPassword}
+                onBlur={() => setBlurred((b) => ({ ...b, password: true }))}
                 icon={Lock}
                 secureTextEntry
                 showToggle

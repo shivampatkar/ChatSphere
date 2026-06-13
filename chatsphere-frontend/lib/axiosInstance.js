@@ -1,6 +1,6 @@
 import axios from "axios";
 
-export const BASE_URL = "http://10.202.177.32:5000";
+export const BASE_URL = "https://chatsphere-16nw.onrender.com";
 
 const axiosInstance = axios.create({
   baseURL: BASE_URL,

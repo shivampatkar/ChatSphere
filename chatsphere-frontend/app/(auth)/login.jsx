@@ -156,23 +156,29 @@ const sk = StyleSheet.create({
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 function validateUsername(v) {
-  if (!v.trim()) return "required";
-  if (v.trim().length < 3) return "too short";
-  if (!/^[a-zA-Z0-9_]+$/.test(v.trim())) return "letters, numbers & _ only";
+  if (!v.trim()) return "Username is required";
+  if (v.trim().length < 3) return "Must be at least 3 characters";
+  if (!/^[a-zA-Z0-9_]+$/.test(v.trim())) return "Letters, numbers & _ only";
   return null;
 }
 function validatePassword(v) {
-  if (!v) return "required";
-  if (v.length < 6) return "min 6 characters";
+  if (!v) return "Password is required";
+  if (v.length < 6) return "Must be at least 6 characters";
   return null;
 }
 
-// ─── AnimatedField (matches register screen) ───────────────────────────────────
+// ─── AnimatedField ─────────────────────────────────────────────────────────────
+// UX rules:
+//   • Green checkmark appears while typing as soon as value is valid (positive feedback)
+//   • Error only shows after the user leaves the field (onBlur) — never while typing
+//   • Once an error is shown, it stays visible on re-focus so user knows what to fix
+//   • Password uses keyboardType="visible-password" on Android → normal keyboard, masked chars
 function AnimatedField({
   label,
   placeholder,
   value,
   onChangeText,
+  onBlur,
   secureTextEntry = false,
   showToggle = false,
   showPassword,
@@ -180,15 +186,16 @@ function AnimatedField({
   inputRef,
   returnKeyType = "done",
   onSubmitEditing,
-  hasError,
+  keyboardType = "default",
+  hasError, // controlled by parent — only true after blur
   errorMessage,
-  isValid,
+  isValid, // controlled by parent — true as soon as value passes validation
   shakeAnim,
   icon: Icon,
 }) {
   const [focused, setFocused] = useState(false);
 
-  // 0 = neutral, 1 = focused, 2 = valid, 3 = error
+  // State machine: 0 = neutral, 1 = focused, 2 = valid, 3 = error
   const colorAnim = useRef(new Animated.Value(0)).current;
   const checkScale = useRef(new Animated.Value(0)).current;
   const errorOpacity = useRef(new Animated.Value(0)).current;
@@ -218,7 +225,7 @@ function AnimatedField({
   useEffect(() => {
     Animated.timing(errorOpacity, {
       toValue: hasError && errorMessage ? 1 : 0,
-      duration: 180,
+      duration: 200,
       useNativeDriver: true,
     }).start();
   }, [hasError, errorMessage]);
@@ -249,6 +256,11 @@ function AnimatedField({
       ? COLORS.inputFocused
       : COLORS.textMuted;
 
+  const handleBlur = () => {
+    setFocused(false);
+    onBlur?.();
+  };
+
   return (
     <View style={{ marginBottom: vs(16) }}>
       <Text style={fi.label}>{label}</Text>
@@ -267,16 +279,38 @@ function AnimatedField({
         <TextInput
           ref={inputRef}
           style={fi.input}
-          value={value}
-          onChangeText={onChangeText}
+          value={
+            secureTextEntry && !showPassword ? "•".repeat(value.length) : value
+          }
+          onChangeText={(text) => {
+            if (secureTextEntry && !showPassword) {
+              // When masked, figure out what actually changed
+              const prev = value;
+              const diff = text.length - "•".repeat(prev.length).length;
+              if (diff > 0) {
+                // Characters added at end
+                onChangeText(prev + text.slice("•".repeat(prev.length).length));
+              } else {
+                // Characters deleted
+                onChangeText(prev.slice(0, text.length));
+              }
+            } else {
+              onChangeText(text);
+            }
+          }}
           placeholder={placeholder}
           placeholderTextColor={COLORS.textMuted}
-          secureTextEntry={secureTextEntry && !showPassword}
+          secureTextEntry={false}
+          keyboardType="default"
           autoCapitalize="none"
+          autoCorrect={false}
+          spellCheck={false}
+          autoComplete={secureTextEntry ? "current-password" : "username"}
+          textContentType={secureTextEntry ? "password" : "username"}
           returnKeyType={returnKeyType}
           onSubmitEditing={onSubmitEditing}
           onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onBlur={handleBlur}
         />
         {showToggle && (
           <Pressable
@@ -300,9 +334,10 @@ function AnimatedField({
         )}
       </Animated.View>
 
-      <Animated.View style={{ opacity: errorOpacity }}>
+      {/* Error — fades in only after blur, never while typing */}
+      <Animated.View style={{ opacity: errorOpacity, overflow: "hidden" }}>
         {hasError && errorMessage ? (
-          <Text style={fi.errorText}>{errorMessage}</Text>
+          <Text style={fi.errorText}>⚠ {errorMessage}</Text>
         ) : null}
       </Animated.View>
     </View>
@@ -358,8 +393,11 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [touched, setTouched] = useState({ username: false, password: false });
   const [ready, setReady] = useState(false);
+
+  // "blurred" tracks whether user has left a field at least once
+  // Errors only show after the user has blurred the field
+  const [blurred, setBlurred] = useState({ username: false, password: false });
 
   const passwordRef = useRef(null);
   const usernameShake = useRef(new Animated.Value(0)).current;
@@ -368,12 +406,8 @@ export default function LoginScreen() {
   const logoOpacity = useRef(new Animated.Value(0)).current;
   const cardOpacity = useRef(new Animated.Value(0)).current;
   const cardSlide = useRef(new Animated.Value(30)).current;
-
-  // Logo pulse + tagline fade
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const taglineOpacity = useRef(new Animated.Value(0)).current;
-
-  // Staggered field entrance
   const fieldAnims = useRef([0, 1].map(() => new Animated.Value(0))).current;
 
   const setAuth = useAuthStore((s) => s.setAuth);
@@ -407,7 +441,6 @@ export default function LoginScreen() {
         }),
       ]).start();
 
-      // Staggered field entrance
       Animated.stagger(
         70,
         fieldAnims.map((anim) =>
@@ -420,7 +453,6 @@ export default function LoginScreen() {
         ),
       ).start();
 
-      // Tagline fade-in after app name
       Animated.timing(taglineOpacity, {
         toValue: 1,
         duration: 400,
@@ -428,7 +460,6 @@ export default function LoginScreen() {
         useNativeDriver: true,
       }).start();
 
-      // Logo breathing pulse loop
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
@@ -477,19 +508,26 @@ export default function LoginScreen() {
     ]).start();
   };
 
-  const uErr = touched.username ? validateUsername(username) : null;
-  const pErr = touched.password ? validatePassword(password) : null;
-  const uValid = !validateUsername(username) && username.length > 0;
-  const pValid = !validatePassword(password) && password.length > 0;
+  // Validation results (always computed, used for isValid + gating submit)
+  const uValidationErr = validateUsername(username);
+  const pValidationErr = validatePassword(password);
+
+  // isValid = passes validation regardless of blur (for green checkmark while typing)
+  const uValid = !uValidationErr && username.length > 0;
+  const pValid = !pValidationErr && password.length > 0;
+
+  // hasError = only show red after user has blurred the field
+  const uErr = blurred.username ? uValidationErr : null;
+  const pErr = blurred.password ? pValidationErr : null;
+
   const canSubmit = uValid && pValid && !isLoading;
 
   const handleLogin = async () => {
-    setTouched({ username: true, password: true });
-    const ue = validateUsername(username);
-    const pe = validatePassword(password);
-    if (ue) shake(usernameShake);
-    if (pe) shake(passwordShake);
-    if (ue || pe) return;
+    // On submit, force-reveal all errors regardless of blur state
+    setBlurred({ username: true, password: true });
+    if (uValidationErr) shake(usernameShake);
+    if (pValidationErr) shake(passwordShake);
+    if (uValidationErr || pValidationErr) return;
 
     setIsLoading(true);
     try {
@@ -599,11 +637,8 @@ export default function LoginScreen() {
                 label="Username"
                 placeholder="Enter your username"
                 value={username}
-                onChangeText={(v) => {
-                  setUsername(v);
-                  if (!touched.username)
-                    setTouched((t) => ({ ...t, username: true }));
-                }}
+                onChangeText={setUsername}
+                onBlur={() => setBlurred((b) => ({ ...b, username: true }))}
                 icon={User}
                 returnKeyType="next"
                 onSubmitEditing={() => passwordRef.current?.focus()}
@@ -619,11 +654,8 @@ export default function LoginScreen() {
                 label="Password"
                 placeholder="Enter your password"
                 value={password}
-                onChangeText={(v) => {
-                  setPassword(v);
-                  if (!touched.password)
-                    setTouched((t) => ({ ...t, password: true }));
-                }}
+                onChangeText={setPassword}
+                onBlur={() => setBlurred((b) => ({ ...b, password: true }))}
                 icon={Lock}
                 secureTextEntry
                 showToggle
@@ -687,7 +719,7 @@ export default function LoginScreen() {
               style={({ pressed }) => [s.link, pressed && { opacity: 0.55 }]}
             >
               <Text style={s.linkText}>
-                Don't have an account?{" "}
+                Don&apos;t have an account?{" "}
                 <Text style={s.linkBold}>Create one</Text>
               </Text>
             </Pressable>
