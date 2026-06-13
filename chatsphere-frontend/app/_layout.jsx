@@ -12,7 +12,6 @@ function RootLayoutNav() {
   const segments = useSegments();
   const router = useRouter();
   const [navigationReady, setNavigationReady] = useState(false);
-  const [authResolved, setAuthResolved] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setNavigationReady(true), 100);
@@ -30,22 +29,11 @@ function RootLayoutNav() {
       router.replace("/(app)/chat");
     }
 
-    setAuthResolved(true);
+    SplashScreen.hideAsync();
   }, [isAuthenticated, hasHydrated, segments, navigationReady]);
-
-  // Hide the native splash only after auth is resolved
-  useEffect(() => {
-    if (authResolved) {
-      SplashScreen.hideAsync();
-    }
-  }, [authResolved]);
-
-  // Return null (nothing renders) while splash is still visible
-  if (!authResolved) return null;
 
   return <Stack screenOptions={{ headerShown: false }} />;
 }
-
 export default function RootLayout() {
   return (
     <>
