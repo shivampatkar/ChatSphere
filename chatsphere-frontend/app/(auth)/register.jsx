@@ -18,6 +18,7 @@ import { router } from "expo-router";
 import { User, Mail, Lock, Eye, EyeOff, ArrowRight } from "lucide-react-native";
 import { authAPI } from "../../services/api";
 import useAuthStore from "../../store/useAuthStore";
+import { useToast } from "../../components/Toast";
 import {
   COLORS,
   FONT,
@@ -54,9 +55,6 @@ function validatePassword(v) {
 }
 
 // ─── AnimatedField ─────────────────────────────────────────────────────────────
-// UX rules:
-//   • Error only shows after the user leaves the field (onBlur) — never while typing
-//   • Once an error is shown, it stays visible on re-focus so user knows what to fix
 function AnimatedField({
   label,
   placeholder,
@@ -78,7 +76,6 @@ function AnimatedField({
 }) {
   const [focused, setFocused] = useState(false);
 
-  // 3 states: 0 = neutral (grey), 1 = focused (blue), 2 = error (red)
   const colorAnim = useRef(new Animated.Value(0)).current;
   const errorOpacity = useRef(new Animated.Value(0)).current;
   const errorHeight = useRef(new Animated.Value(0)).current;
@@ -90,7 +87,7 @@ function AnimatedField({
     Animated.timing(colorAnim, {
       toValue: target,
       duration: 200,
-      useNativeDriver: false,
+      useNativeDriver: false, // JS driver — handles colors/borderWidth
     }).start();
   }, [focused, hasError]);
 
@@ -139,79 +136,72 @@ function AnimatedField({
   return (
     <View style={{ marginBottom: vs(16) }}>
       <Text style={fi.label}>{label}</Text>
-      <Animated.View
-        style={[
-          fi.row,
-          {
-            borderColor,
-            backgroundColor: bgColor,
-            borderWidth,
-            transform: [{ translateX: shakeAnim }],
-          },
-        ]}
-      >
-        <Icon size={rs(17)} color={iconColor} style={fi.icon} />
-        <TextInput
-          ref={inputRef}
-          style={fi.input}
-          value={
-            secureTextEntry && !showPassword ? "•".repeat(value.length) : value
-          }
-          onChangeText={(text) => {
-            if (secureTextEntry && !showPassword) {
-              const prev = value;
-              const diff = text.length - prev.length;
-              if (diff > 0) {
-                onChangeText(prev + text.slice(prev.length));
-              } else {
-                onChangeText(prev.slice(0, text.length));
-              }
-            } else {
-              onChangeText(text);
+
+      {/* Outer view handles shake (native driver) */}
+      <Animated.View style={{ transform: [{ translateX: shakeAnim }] }}>
+        {/* Inner view handles border/bg color (JS driver) */}
+        <Animated.View
+          style={[
+            fi.row,
+            {
+              borderColor,
+              backgroundColor: bgColor,
+              borderWidth,
+            },
+          ]}
+        >
+          <Icon size={rs(17)} color={iconColor} style={fi.icon} />
+          <TextInput
+            ref={inputRef}
+            style={fi.input}
+            value={
+              secureTextEntry && !showPassword
+                ? "•".repeat(value.length)
+                : value
             }
-          }}
-          placeholder={placeholder}
-          placeholderTextColor={COLORS.textMuted}
-          secureTextEntry={false}
-          keyboardType={keyboardType}
-          autoCapitalize="none"
-          autoCorrect={false}
-          spellCheck={false}
-          autoComplete={
-            secureTextEntry
-              ? "new-password"
-              : keyboardType === "email-address"
-                ? "email"
-                : "username"
-          }
-          textContentType={
-            secureTextEntry
-              ? "newPassword"
-              : keyboardType === "email-address"
-                ? "emailAddress"
-                : "username"
-          }
-          returnKeyType={returnKeyType}
-          onSubmitEditing={onSubmitEditing}
-          onFocus={() => setFocused(true)}
-          onBlur={handleBlur}
-        />
-        {showToggle && (
-          <Pressable
-            onPress={onTogglePassword}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            style={fi.eyeBtn}
-          >
-            {showPassword ? (
-              <EyeOff size={rs(17)} color={COLORS.textMuted} />
-            ) : (
-              <Eye size={rs(17)} color={COLORS.textMuted} />
-            )}
-          </Pressable>
-        )}
+            onChangeText={(text) => {
+              if (secureTextEntry && !showPassword) {
+                const prev = value;
+                const diff = text.length - prev.length;
+                if (diff > 0) {
+                  onChangeText(prev + text.slice(prev.length));
+                } else {
+                  onChangeText(prev.slice(0, text.length));
+                }
+              } else {
+                onChangeText(text);
+              }
+            }}
+            placeholder={placeholder}
+            placeholderTextColor={COLORS.textMuted}
+            secureTextEntry={false}
+            keyboardType={keyboardType}
+            autoCapitalize="none"
+            autoCorrect={false}
+            spellCheck={false}
+            autoComplete={secureTextEntry ? "current-password" : "username"}
+            textContentType={secureTextEntry ? "password" : "username"}
+            returnKeyType={returnKeyType}
+            onSubmitEditing={onSubmitEditing}
+            onFocus={() => setFocused(true)}
+            onBlur={handleBlur}
+          />
+          {showToggle && (
+            <Pressable
+              onPress={onTogglePassword}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={fi.eyeBtn}
+            >
+              {showPassword ? (
+                <EyeOff size={rs(17)} color={COLORS.textMuted} />
+              ) : (
+                <Eye size={rs(17)} color={COLORS.textMuted} />
+              )}
+            </Pressable>
+          )}
+        </Animated.View>
       </Animated.View>
 
-      {/* Error — animates in height + opacity, only after blur */}
       <Animated.View
         style={{
           opacity: errorOpacity,
@@ -267,8 +257,6 @@ export default function RegisterScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // "blurred" tracks whether user has left each field at least once
-  // Errors only appear after blurring — never while actively typing
   const [blurred, setBlurred] = useState({
     username: false,
     email: false,
@@ -290,9 +278,9 @@ export default function RegisterScreen() {
   const taglineOpacity = useRef(new Animated.Value(0)).current;
 
   const setAuth = useAuthStore((s) => s.setAuth);
+  const { show } = useToast();
 
   useEffect(() => {
-    // Spring logo entrance — immediate, consistent with login
     Animated.parallel([
       Animated.spring(logoScale, {
         toValue: 1,
@@ -411,11 +399,21 @@ export default function RegisterScreen() {
       });
       const { token, user } = res.data;
       setAuth(token, user);
+      show({
+        type: "success",
+        title: "Account created",
+        message: `Welcome, @${user.username}!`,
+      });
       router.replace("/(app)/chat");
-    } catch {
+    } catch (error) {
       shake(usernameShake);
       shake(emailShake);
       shake(passwordShake);
+      show({
+        type: "error",
+        title: "Registration failed",
+        message: error.response?.data?.message || "Something went wrong",
+      });
     } finally {
       setIsLoading(false);
     }
@@ -619,7 +617,6 @@ const s = StyleSheet.create({
     paddingVertical: vs(32),
   },
   top: { alignItems: "center", marginBottom: vs(24) },
-  // ── Ring sizes matched with login ──
   ringOuter: {
     width: rs(152),
     height: rs(152),

@@ -19,6 +19,7 @@ import useChat from "../../hooks/useChat";
 import MessageBubble from "../../components/MessageBubble";
 import ChatInput from "../../components/ChatInput";
 import ConnectionBanner from "../../components/ConnectionBanner";
+import { useToast } from "../../components/Toast";
 import {
   COLORS,
   FONT,
@@ -83,7 +84,6 @@ function SkeletonBubble({ isOwn }) {
         isOwn ? skeletonStyles.rowOwn : skeletonStyles.rowOther,
       ]}
     >
-      {/* Avatar placeholder — only for "other" bubbles */}
       {!isOwn && (
         <ShimmerBar
           width={32}
@@ -102,7 +102,6 @@ function SkeletonBubble({ isOwn }) {
           isOwn ? skeletonStyles.wrapperOwn : skeletonStyles.wrapperOther,
         ]}
       >
-        {/* Sender name placeholder — only for others */}
         {!isOwn && (
           <ShimmerBar
             width={64}
@@ -111,14 +110,12 @@ function SkeletonBubble({ isOwn }) {
           />
         )}
 
-        {/* Bubble body */}
         <ShimmerBar
           width={isOwn ? 180 : 220}
           height={44}
           style={{ borderRadius: RADIUS.lg }}
         />
 
-        {/* Timestamp placeholder */}
         <ShimmerBar width={40} height={9} style={{ marginTop: 4 }} />
       </View>
     </View>
@@ -226,8 +223,8 @@ export default function ChatScreen() {
   const user = useAuthStore((s) => s.user);
   const { messages, isLoading, connectionStatus, sendMessage, currentUserId } =
     useChat();
+  const { show } = useToast();
 
-  // Scroll to bottom only when a new message arrives
   useEffect(() => {
     if (messages.length > 0) {
       setTimeout(() => {
@@ -238,6 +235,7 @@ export default function ChatScreen() {
 
   const handleLogout = async () => {
     await logout();
+    show({ type: "logout", title: "Signed out", message: "See you again soon!" });
     router.replace("/(auth)/login");
   };
 
@@ -248,7 +246,6 @@ export default function ChatScreen() {
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
       <View style={styles.emptyIconWrapper}>
-        {/* Using a simple placeholder icon — swap for your Users icon if preferred */}
         <Text style={styles.emptyIconText}>💬</Text>
       </View>
       <Text style={styles.emptyTitle}>No messages yet</Text>
@@ -257,17 +254,10 @@ export default function ChatScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      {/*
-        KAV fix:
-        - iOS: "padding" shifts content up when keyboard appears — correct.
-        - Android: use undefined here and set in app.json:
-            "android": { "softwareKeyboardLayoutMode": "resize" }
-          This lets the OS handle it natively, avoids layout jumps entirely.
-      */}
+    <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={0}
       >
         {/* ── Header ───────────────────────────────────────────── */}
@@ -275,7 +265,6 @@ export default function ChatScreen() {
           colors={[COLORS.gradientStart, COLORS.gradientMid]}
           style={styles.header}
         >
-          {/* Left: open logo + name + status pill */}
           <View style={styles.headerLeft}>
             <View style={styles.headerLogoWrapper}>
               <Image
@@ -290,7 +279,6 @@ export default function ChatScreen() {
             </View>
           </View>
 
-          {/* Right: bare LogOut icon */}
           <TouchableOpacity
             onPress={handleLogout}
             style={styles.logoutButton}
@@ -309,23 +297,24 @@ export default function ChatScreen() {
         <ConnectionBanner status={connectionStatus} />
 
         {/* ── Messages / Skeleton ──────────────────────────────── */}
-        {isLoading ? (
-          <SkeletonList />
-        ) : (
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            renderItem={renderMessage}
-            keyExtractor={(item) => item._id}
-            contentContainerStyle={[
-              styles.messagesList,
-              messages.length === 0 && styles.messagesListEmpty,
-            ]}
-            ListEmptyComponent={renderEmpty}
-            showsVerticalScrollIndicator={false}
-            // onContentSizeChange removed — redundant with the useEffect scroll above
-          />
-        )}
+        <View style={styles.flex}>
+          {isLoading ? (
+            <SkeletonList />
+          ) : (
+            <FlatList
+              ref={flatListRef}
+              data={messages}
+              renderItem={renderMessage}
+              keyExtractor={(item) => item._id}
+              contentContainerStyle={[
+                styles.messagesList,
+                messages.length === 0 && styles.messagesListEmpty,
+              ]}
+              ListEmptyComponent={renderEmpty}
+              showsVerticalScrollIndicator={false}
+            />
+          )}
+        </View>
 
         {/* ── Input ────────────────────────────────────────────── */}
         <ChatInput

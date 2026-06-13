@@ -3,6 +3,7 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import useAuthStore from "../store/useAuthStore";
+import { ToastProvider } from "../components/Toast";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -34,11 +35,12 @@ function RootLayoutNav() {
 
   return <Stack screenOptions={{ headerShown: false }} />;
 }
+
 export default function RootLayout() {
   return (
-    <>
+    <ToastProvider>
       <StatusBar style="light" backgroundColor="#1E3A8A" />
       <RootLayoutNav />
-    </>
+    </ToastProvider>
   );
 }
