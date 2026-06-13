@@ -15,15 +15,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import {
-  User,
-  Mail,
-  Lock,
-  Eye,
-  EyeOff,
-  ArrowRight,
-  ArrowLeft,
-} from "lucide-react-native";
+import { User, Mail, Lock, Eye, EyeOff, ArrowRight } from "lucide-react-native";
 import { authAPI } from "../../services/api";
 import useAuthStore from "../../store/useAuthStore";
 import {
@@ -50,7 +42,6 @@ function validateUsername(v) {
 
 function validateEmail(v) {
   if (!v.trim()) return "Email is required";
-  // Proper email regex: local@domain.tld — supports subdomains, all valid TLDs
   const emailRegex = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/;
   if (!emailRegex.test(v.trim())) return "Enter a valid email address";
   return null;
@@ -64,10 +55,8 @@ function validatePassword(v) {
 
 // ─── AnimatedField ─────────────────────────────────────────────────────────────
 // UX rules:
-//   • Green checkmark appears while typing as soon as value is valid (positive feedback)
 //   • Error only shows after the user leaves the field (onBlur) — never while typing
 //   • Once an error is shown, it stays visible on re-focus so user knows what to fix
-//   • Password uses keyboardType="visible-password" on Android → normal keyboard, masked chars
 function AnimatedField({
   label,
   placeholder,
@@ -89,7 +78,7 @@ function AnimatedField({
 }) {
   const [focused, setFocused] = useState(false);
 
-  // 3 states only: 0 = neutral (grey), 1 = focused (blue), 2 = error (red)
+  // 3 states: 0 = neutral (grey), 1 = focused (blue), 2 = error (red)
   const colorAnim = useRef(new Animated.Value(0)).current;
   const errorOpacity = useRef(new Animated.Value(0)).current;
   const errorHeight = useRef(new Animated.Value(0)).current;
@@ -292,6 +281,8 @@ export default function RegisterScreen() {
   const usernameShake = useRef(new Animated.Value(0)).current;
   const emailShake = useRef(new Animated.Value(0)).current;
   const passwordShake = useRef(new Animated.Value(0)).current;
+  const logoScale = useRef(new Animated.Value(0.85)).current;
+  const logoOpacity = useRef(new Animated.Value(0)).current;
   const cardOpacity = useRef(new Animated.Value(0)).current;
   const cardSlide = useRef(new Animated.Value(24)).current;
   const fieldAnims = useRef([0, 1, 2].map(() => new Animated.Value(0))).current;
@@ -301,15 +292,29 @@ export default function RegisterScreen() {
   const setAuth = useAuthStore((s) => s.setAuth);
 
   useEffect(() => {
+    // Spring logo entrance — immediate, consistent with login
     Animated.parallel([
+      Animated.spring(logoScale, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 55,
+        friction: 8,
+      }),
+      Animated.timing(logoOpacity, {
+        toValue: 1,
+        duration: 350,
+        useNativeDriver: true,
+      }),
       Animated.timing(cardOpacity, {
         toValue: 1,
         duration: 380,
+        delay: 120,
         useNativeDriver: true,
       }),
       Animated.timing(cardSlide, {
         toValue: 0,
         duration: 380,
+        delay: 120,
         useNativeDriver: true,
       }),
     ]).start();
@@ -320,6 +325,7 @@ export default function RegisterScreen() {
         Animated.timing(anim, {
           toValue: 1,
           duration: 320,
+          delay: 120,
           useNativeDriver: true,
         }),
       ),
@@ -378,12 +384,10 @@ export default function RegisterScreen() {
     ]).start();
   };
 
-  // Always compute validation results
   const uValidationErr = validateUsername(username);
   const eValidationErr = validateEmail(email);
   const pValidationErr = validatePassword(password);
 
-  // hasError only shows red after the field has been blurred at least once
   const uErr = blurred.username ? uValidationErr : null;
   const eErr = blurred.email ? eValidationErr : null;
   const pErr = blurred.password ? pValidationErr : null;
@@ -392,7 +396,6 @@ export default function RegisterScreen() {
     !uValidationErr && !eValidationErr && !pValidationErr && !isLoading;
 
   const handleRegister = async () => {
-    // On submit, force-reveal all errors regardless of blur state
     setBlurred({ username: true, email: true, password: true });
     if (uValidationErr) shake(usernameShake);
     if (eValidationErr) shake(emailShake);
@@ -445,17 +448,13 @@ export default function RegisterScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Back */}
-          <Pressable
-            onPress={() => router.back()}
-            style={({ pressed }) => [s.back, pressed && { opacity: 0.6 }]}
-          >
-            <ArrowLeft size={rs(18)} color="#fff" strokeWidth={2.2} />
-            <Text style={s.backText}>Back</Text>
-          </Pressable>
-
           {/* Logo */}
-          <View style={s.top}>
+          <Animated.View
+            style={[
+              s.top,
+              { opacity: logoOpacity, transform: [{ scale: logoScale }] },
+            ]}
+          >
             <Animated.View
               style={[s.ringOuter, { transform: [{ scale: pulseAnim }] }]}
             >
@@ -485,7 +484,7 @@ export default function RegisterScreen() {
             <Animated.Text style={[s.tagline, { opacity: taglineOpacity }]}>
               Join the conversation
             </Animated.Text>
-          </View>
+          </Animated.View>
 
           {/* Card */}
           <Animated.View
@@ -619,47 +618,40 @@ const s = StyleSheet.create({
     paddingHorizontal: rs(22),
     paddingVertical: vs(32),
   },
-  back: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: rs(6),
-    marginBottom: vs(20),
-    alignSelf: "flex-start",
-  },
-  backText: { fontSize: rs(14), color: "#fff", fontWeight: WEIGHT.medium },
   top: { alignItems: "center", marginBottom: vs(24) },
+  // ── Ring sizes matched with login ──
   ringOuter: {
-    width: rs(120),
-    height: rs(120),
-    borderRadius: rs(60),
+    width: rs(152),
+    height: rs(152),
+    borderRadius: rs(76),
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.10)",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: vs(12),
+    marginBottom: vs(14),
   },
   ringMid: {
-    width: rs(104),
-    height: rs(104),
-    borderRadius: rs(52),
+    width: rs(134),
+    height: rs(134),
+    borderRadius: rs(67),
     borderWidth: 1.5,
     borderColor: "rgba(255,255,255,0.18)",
     justifyContent: "center",
     alignItems: "center",
   },
   logoBox: {
-    width: rs(88),
-    height: rs(88),
-    borderRadius: rs(44),
+    width: rs(114),
+    height: rs(114),
+    borderRadius: rs(57),
     backgroundColor: "rgba(255,255,255,0.15)",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1.5,
     borderColor: "rgba(255,255,255,0.30)",
   },
-  logo: { width: rs(100), height: rs(100), tintColor: "#ffffff" },
+  logo: { width: rs(140), height: rs(140), tintColor: "#ffffff" },
   appName: {
-    fontSize: rs(24),
+    fontSize: rs(28),
     fontWeight: WEIGHT.extrabold,
     color: "#fff",
     letterSpacing: 0.4,
@@ -667,7 +659,7 @@ const s = StyleSheet.create({
   tagline: {
     fontSize: rs(12),
     color: "rgba(255,255,255,0.70)",
-    marginTop: vs(4),
+    marginTop: vs(5),
     letterSpacing: 1.4,
     fontWeight: WEIGHT.medium,
   },

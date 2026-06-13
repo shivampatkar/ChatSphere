@@ -32,121 +32,6 @@ const { width, height } = Dimensions.get("window");
 const rs = (n) => Math.min(Math.max((width / 390) * n, n * 0.82), n * 1.14);
 const vs = (n) => Math.min(Math.max((height / 844) * n, n * 0.82), n * 1.14);
 
-// ─── Skeleton ─────────────────────────────────────────────────────────────────
-function SkeletonPulse({ style }) {
-  const opacity = useRef(new Animated.Value(0.3)).current;
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, {
-          toValue: 0.85,
-          duration: 700,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 0.3,
-          duration: 700,
-          useNativeDriver: true,
-        }),
-      ]),
-    ).start();
-  }, []);
-  return (
-    <Animated.View
-      style={[
-        {
-          opacity,
-          backgroundColor: "rgba(255,255,255,0.20)",
-          borderRadius: rs(10),
-        },
-        style,
-      ]}
-    />
-  );
-}
-
-function SkeletonScreen() {
-  return (
-    <View style={sk.wrap}>
-      <SkeletonPulse style={sk.ring} />
-      <SkeletonPulse style={sk.name} />
-      <SkeletonPulse style={sk.tag} />
-      <View style={sk.card}>
-        <SkeletonPulse style={sk.h1} />
-        <SkeletonPulse style={sk.h2} />
-        <SkeletonPulse style={sk.lbl} />
-        <SkeletonPulse style={sk.inp} />
-        <SkeletonPulse style={sk.lbl} />
-        <SkeletonPulse style={sk.inp} />
-        <SkeletonPulse style={sk.btn} />
-      </View>
-    </View>
-  );
-}
-
-const sk = StyleSheet.create({
-  wrap: {
-    flex: 1,
-    alignItems: "center",
-    paddingTop: vs(52),
-    paddingHorizontal: rs(24),
-  },
-  ring: {
-    width: rs(120),
-    height: rs(120),
-    borderRadius: rs(60),
-    marginBottom: vs(14),
-  },
-  name: {
-    width: rs(150),
-    height: rs(24),
-    borderRadius: rs(6),
-    marginBottom: vs(8),
-  },
-  tag: {
-    width: rs(110),
-    height: rs(13),
-    borderRadius: rs(6),
-    marginBottom: vs(36),
-  },
-  card: {
-    width: "100%",
-    backgroundColor: "rgba(255,255,255,0.09)",
-    borderRadius: rs(24),
-    padding: rs(24),
-  },
-  h1: {
-    width: rs(130),
-    height: rs(20),
-    borderRadius: rs(6),
-    marginBottom: vs(8),
-  },
-  h2: {
-    width: rs(100),
-    height: rs(13),
-    borderRadius: rs(6),
-    marginBottom: vs(22),
-  },
-  lbl: {
-    width: rs(70),
-    height: rs(12),
-    borderRadius: rs(4),
-    marginBottom: vs(6),
-  },
-  inp: {
-    width: "100%",
-    height: rs(52),
-    borderRadius: rs(12),
-    marginBottom: vs(16),
-  },
-  btn: {
-    width: "100%",
-    height: rs(52),
-    borderRadius: rs(12),
-    marginTop: vs(4),
-  },
-});
-
 // ─── Validation ───────────────────────────────────────────────────────────────
 function validateUsername(v) {
   if (!v.trim()) return "Username is required";
@@ -162,10 +47,8 @@ function validatePassword(v) {
 
 // ─── AnimatedField ─────────────────────────────────────────────────────────────
 // UX rules:
-//   • Green checkmark appears while typing as soon as value is valid (positive feedback)
 //   • Error only shows after the user leaves the field (onBlur) — never while typing
 //   • Once an error is shown, it stays visible on re-focus so user knows what to fix
-//   • Password uses keyboardType="visible-password" on Android → normal keyboard, masked chars
 function AnimatedField({
   label,
   placeholder,
@@ -187,9 +70,10 @@ function AnimatedField({
 }) {
   const [focused, setFocused] = useState(false);
 
-  // 3 states only: 0 = neutral (grey), 1 = focused (blue), 2 = error (red)
+  // 3 states: 0 = neutral (grey), 1 = focused (blue), 2 = error (red)
   const colorAnim = useRef(new Animated.Value(0)).current;
   const errorOpacity = useRef(new Animated.Value(0)).current;
+  const errorHeight = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     let target = 0;
@@ -203,11 +87,19 @@ function AnimatedField({
   }, [focused, hasError]);
 
   useEffect(() => {
-    Animated.timing(errorOpacity, {
-      toValue: hasError && errorMessage ? 1 : 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
+    const show = hasError && !!errorMessage;
+    Animated.parallel([
+      Animated.timing(errorOpacity, {
+        toValue: show ? 1 : 0,
+        duration: 200,
+        useNativeDriver: false,
+      }),
+      Animated.timing(errorHeight, {
+        toValue: show ? vs(22) : 0,
+        duration: 200,
+        useNativeDriver: false,
+      }),
+    ]).start();
   }, [hasError, errorMessage]);
 
   const borderColor = colorAnim.interpolate({
@@ -259,14 +151,11 @@ function AnimatedField({
           }
           onChangeText={(text) => {
             if (secureTextEntry && !showPassword) {
-              // When masked, figure out what actually changed
               const prev = value;
-              const diff = text.length - "•".repeat(prev.length).length;
+              const diff = text.length - prev.length;
               if (diff > 0) {
-                // Characters added at end
-                onChangeText(prev + text.slice("•".repeat(prev.length).length));
+                onChangeText(prev + text.slice(prev.length));
               } else {
-                // Characters deleted
                 onChangeText(prev.slice(0, text.length));
               }
             } else {
@@ -276,7 +165,7 @@ function AnimatedField({
           placeholder={placeholder}
           placeholderTextColor={COLORS.textMuted}
           secureTextEntry={false}
-          keyboardType="default"
+          keyboardType={keyboardType}
           autoCapitalize="none"
           autoCorrect={false}
           spellCheck={false}
@@ -302,11 +191,15 @@ function AnimatedField({
         )}
       </Animated.View>
 
-      {/* Error — fades in only after blur, never while typing */}
-      <Animated.View style={{ opacity: errorOpacity, overflow: "hidden" }}>
-        {hasError && errorMessage ? (
-          <Text style={fi.errorText}>⚠ {errorMessage}</Text>
-        ) : null}
+      {/* Error — animates in height + opacity, only after blur */}
+      <Animated.View
+        style={{
+          opacity: errorOpacity,
+          height: errorHeight,
+          overflow: "hidden",
+        }}
+      >
+        <Text style={fi.errorText}>⚠ {errorMessage}</Text>
       </Animated.View>
     </View>
   );
@@ -340,7 +233,7 @@ const fi = StyleSheet.create({
   errorText: {
     fontSize: rs(11),
     color: COLORS.error,
-    marginTop: vs(5),
+    marginTop: vs(4),
     paddingHorizontal: rs(2),
     fontWeight: WEIGHT.medium,
   },
@@ -352,10 +245,9 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [ready, setReady] = useState(false);
 
-  // "blurred" tracks whether user has left a field at least once
-  // Errors only show after the user has blurred the field
+  // "blurred" tracks whether user has left each field at least once
+  // Errors only appear after blurring — never while actively typing
   const [blurred, setBlurred] = useState({ username: false, password: false });
 
   const passwordRef = useRef(null);
@@ -372,69 +264,66 @@ export default function LoginScreen() {
   const setAuth = useAuthStore((s) => s.setAuth);
 
   useEffect(() => {
-    const t = setTimeout(() => {
-      setReady(true);
-      Animated.parallel([
-        Animated.spring(logoScale, {
-          toValue: 1,
-          useNativeDriver: true,
-          tension: 55,
-          friction: 8,
-        }),
-        Animated.timing(logoOpacity, {
-          toValue: 1,
-          duration: 350,
-          useNativeDriver: true,
-        }),
-        Animated.timing(cardOpacity, {
-          toValue: 1,
-          duration: 400,
-          delay: 120,
-          useNativeDriver: true,
-        }),
-        Animated.timing(cardSlide, {
-          toValue: 0,
-          duration: 400,
-          delay: 120,
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      Animated.stagger(
-        70,
-        fieldAnims.map((anim) =>
-          Animated.timing(anim, {
-            toValue: 1,
-            duration: 320,
-            delay: 120,
-            useNativeDriver: true,
-          }),
-        ),
-      ).start();
-
-      Animated.timing(taglineOpacity, {
+    // Spring logo entrance — immediate, no delay
+    Animated.parallel([
+      Animated.spring(logoScale, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 55,
+        friction: 8,
+      }),
+      Animated.timing(logoOpacity, {
+        toValue: 1,
+        duration: 350,
+        useNativeDriver: true,
+      }),
+      Animated.timing(cardOpacity, {
         toValue: 1,
         duration: 400,
-        delay: 250,
+        delay: 120,
         useNativeDriver: true,
-      }).start();
+      }),
+      Animated.timing(cardSlide, {
+        toValue: 0,
+        duration: 400,
+        delay: 120,
+        useNativeDriver: true,
+      }),
+    ]).start();
 
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.08,
-            duration: 1400,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 1400,
-            useNativeDriver: true,
-          }),
-        ]),
-      ).start();
-    }, 850);
-    return () => clearTimeout(t);
+    Animated.stagger(
+      70,
+      fieldAnims.map((anim) =>
+        Animated.timing(anim, {
+          toValue: 1,
+          duration: 320,
+          delay: 120,
+          useNativeDriver: true,
+        }),
+      ),
+    ).start();
+
+    Animated.timing(taglineOpacity, {
+      toValue: 1,
+      duration: 400,
+      delay: 250,
+      useNativeDriver: true,
+    }).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.08,
+          duration: 1400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1400,
+          useNativeDriver: true,
+        }),
+      ]),
+    ).start();
   }, []);
 
   const shake = (anim) => {
@@ -467,18 +356,15 @@ export default function LoginScreen() {
     ]).start();
   };
 
-  // Validation (always computed for submit gating)
   const uValidationErr = validateUsername(username);
   const pValidationErr = validatePassword(password);
 
-  // hasError = only show red after user has blurred the field
   const uErr = blurred.username ? uValidationErr : null;
   const pErr = blurred.password ? pValidationErr : null;
 
   const canSubmit = !uValidationErr && !pValidationErr && !isLoading;
 
   const handleLogin = async () => {
-    // On submit, force-reveal all errors regardless of blur state
     setBlurred({ username: true, password: true });
     if (uValidationErr) shake(usernameShake);
     if (pValidationErr) shake(passwordShake);
@@ -512,17 +398,6 @@ export default function LoginScreen() {
       },
     ],
   });
-
-  if (!ready) {
-    return (
-      <LinearGradient
-        colors={[COLORS.gradientStart, COLORS.gradientMid, COLORS.gradientEnd]}
-        style={s.gradient}
-      >
-        <SkeletonScreen />
-      </LinearGradient>
-    );
-  }
 
   return (
     <LinearGradient
@@ -693,6 +568,7 @@ const s = StyleSheet.create({
     paddingVertical: vs(32),
   },
   top: { alignItems: "center", marginBottom: vs(28) },
+  // ── Ring sizes matched with register ──
   ringOuter: {
     width: rs(152),
     height: rs(152),
