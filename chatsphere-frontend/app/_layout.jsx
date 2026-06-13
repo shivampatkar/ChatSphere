@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import * as SplashScreen from "expo-splash-screen";
 import useAuthStore from "../store/useAuthStore";
+
+SplashScreen.preventAutoHideAsync();
 
 function RootLayoutNav() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -9,8 +12,8 @@ function RootLayoutNav() {
   const segments = useSegments();
   const router = useRouter();
   const [navigationReady, setNavigationReady] = useState(false);
+  const [authResolved, setAuthResolved] = useState(false);
 
-  // Small timeout same as your KrishiVerse pattern
   useEffect(() => {
     const t = setTimeout(() => setNavigationReady(true), 100);
     return () => clearTimeout(t);
@@ -26,9 +29,19 @@ function RootLayoutNav() {
     } else if (isAuthenticated && inAuthGroup) {
       router.replace("/(app)/chat");
     }
+
+    setAuthResolved(true);
   }, [isAuthenticated, hasHydrated, segments, navigationReady]);
 
-  if (!hasHydrated) return null;
+  // Hide the native splash only after auth is resolved
+  useEffect(() => {
+    if (authResolved) {
+      SplashScreen.hideAsync();
+    }
+  }, [authResolved]);
+
+  // Return null (nothing renders) while splash is still visible
+  if (!authResolved) return null;
 
   return <Stack screenOptions={{ headerShown: false }} />;
 }

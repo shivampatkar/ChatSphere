@@ -15,14 +15,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import {
-  User,
-  Lock,
-  Eye,
-  EyeOff,
-  ArrowRight,
-  Check,
-} from "lucide-react-native";
+import { User, Lock, Eye, EyeOff, ArrowRight } from "lucide-react-native";
 import { authAPI } from "../../services/api";
 import useAuthStore from "../../store/useAuthStore";
 import {
@@ -187,40 +180,27 @@ function AnimatedField({
   returnKeyType = "done",
   onSubmitEditing,
   keyboardType = "default",
-  hasError, // controlled by parent — only true after blur
+  hasError,
   errorMessage,
-  isValid, // controlled by parent — true as soon as value passes validation
   shakeAnim,
   icon: Icon,
 }) {
   const [focused, setFocused] = useState(false);
 
-  // State machine: 0 = neutral, 1 = focused, 2 = valid, 3 = error
+  // 3 states only: 0 = neutral (grey), 1 = focused (blue), 2 = error (red)
   const colorAnim = useRef(new Animated.Value(0)).current;
-  const checkScale = useRef(new Animated.Value(0)).current;
   const errorOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     let target = 0;
-    if (hasError) target = 3;
-    else if (isValid && !focused) target = 2;
+    if (hasError) target = 2;
     else if (focused) target = 1;
-
     Animated.timing(colorAnim, {
       toValue: target,
-      duration: 220,
+      duration: 200,
       useNativeDriver: false,
     }).start();
-  }, [focused, isValid, hasError]);
-
-  useEffect(() => {
-    Animated.spring(checkScale, {
-      toValue: isValid && !showToggle ? 1 : 0,
-      friction: 5,
-      tension: 140,
-      useNativeDriver: true,
-    }).start();
-  }, [isValid, showToggle]);
+  }, [focused, hasError]);
 
   useEffect(() => {
     Animated.timing(errorOpacity, {
@@ -231,23 +211,18 @@ function AnimatedField({
   }, [hasError, errorMessage]);
 
   const borderColor = colorAnim.interpolate({
-    inputRange: [0, 1, 2, 3],
-    outputRange: [
-      COLORS.inputBorder,
-      COLORS.inputFocused,
-      "#10B981",
-      COLORS.error,
-    ],
+    inputRange: [0, 1, 2],
+    outputRange: [COLORS.inputBorder, COLORS.inputFocused, COLORS.error],
   });
 
   const bgColor = colorAnim.interpolate({
-    inputRange: [0, 1, 2, 3],
-    outputRange: [COLORS.inputBg, "#EFF6FF", COLORS.inputBg, "#FFF5F5"],
+    inputRange: [0, 1, 2],
+    outputRange: [COLORS.inputBg, "#EFF6FF", "#FFF5F5"],
   });
 
   const borderWidth = colorAnim.interpolate({
-    inputRange: [0, 1, 2, 3],
-    outputRange: [1.5, 1.8, 1.5, 1.5],
+    inputRange: [0, 1, 2],
+    outputRange: [1.5, 1.8, 1.5],
   });
 
   const iconColor = hasError
@@ -325,13 +300,6 @@ function AnimatedField({
             )}
           </Pressable>
         )}
-        {!showToggle && (
-          <Animated.View
-            style={[fi.validDot, { transform: [{ scale: checkScale }] }]}
-          >
-            <Check size={rs(10)} color="#fff" strokeWidth={2.5} />
-          </Animated.View>
-        )}
       </Animated.View>
 
       {/* Error — fades in only after blur, never while typing */}
@@ -369,15 +337,6 @@ const fi = StyleSheet.create({
     fontWeight: WEIGHT.regular,
   },
   eyeBtn: { padding: rs(4), marginLeft: rs(4) },
-  validDot: {
-    width: rs(20),
-    height: rs(20),
-    borderRadius: rs(10),
-    backgroundColor: "#10B981",
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: rs(8),
-  },
   errorText: {
     fontSize: rs(11),
     color: COLORS.error,
@@ -508,19 +467,15 @@ export default function LoginScreen() {
     ]).start();
   };
 
-  // Validation results (always computed, used for isValid + gating submit)
+  // Validation (always computed for submit gating)
   const uValidationErr = validateUsername(username);
   const pValidationErr = validatePassword(password);
-
-  // isValid = passes validation regardless of blur (for green checkmark while typing)
-  const uValid = !uValidationErr && username.length > 0;
-  const pValid = !pValidationErr && password.length > 0;
 
   // hasError = only show red after user has blurred the field
   const uErr = blurred.username ? uValidationErr : null;
   const pErr = blurred.password ? pValidationErr : null;
 
-  const canSubmit = uValid && pValid && !isLoading;
+  const canSubmit = !uValidationErr && !pValidationErr && !isLoading;
 
   const handleLogin = async () => {
     // On submit, force-reveal all errors regardless of blur state
@@ -644,7 +599,6 @@ export default function LoginScreen() {
                 onSubmitEditing={() => passwordRef.current?.focus()}
                 hasError={!!uErr}
                 errorMessage={uErr}
-                isValid={uValid}
                 shakeAnim={usernameShake}
               />
             </Animated.View>
@@ -666,7 +620,6 @@ export default function LoginScreen() {
                 onSubmitEditing={handleLogin}
                 hasError={!!pErr}
                 errorMessage={pErr}
-                isValid={pValid}
                 shakeAnim={passwordShake}
               />
             </Animated.View>
