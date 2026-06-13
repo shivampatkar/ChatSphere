@@ -45,5 +45,10 @@ export default {
       typedRoutes: true,
       reactCompiler: true,
     },
+    extra: {
+      eas: {
+        projectId: "358b0741-c0e6-4a37-be78-8a3e933841f4",
+      },
+    },
   },
 };
