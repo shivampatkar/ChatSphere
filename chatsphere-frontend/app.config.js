@@ -1,11 +1,11 @@
 export default {
   expo: {
-    name: "chatsphere-frontend",
+    name: "ChatSphere",
     slug: "chatsphere-frontend",
     version: "1.0.0",
     orientation: "portrait",
     icon: "./assets/images/icon.png",
-    scheme: "chatspherefrontend",
+    scheme: "chatsphere",
     userInterfaceStyle: "automatic",
     newArchEnabled: true,
     ios: {
@@ -15,9 +15,9 @@ export default {
       package: "com.shivam2601.chatspherefrontend",
       adaptiveIcon: {
         backgroundColor: "#E6F4FE",
-        foregroundImage: "./assets/images/android-icon-foreground.png",
-        backgroundImage: "./assets/images/android-icon-background.png",
-        monochromeImage: "./assets/images/android-icon-monochrome.png",
+        foregroundImage: "./assets/images/icon.png",
+        backgroundImage: "./assets/images/icon.png",
+        monochromeImage: "./assets/images/icon.png",
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
